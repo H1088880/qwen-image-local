@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qwen-Image 2.1 本地生图</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --border: #e5e7eb;
+    --text: #1a1a1a; --muted: #6b7280; --accent: #2563eb;
+    --accent-hover: #1d4ed8; --ok: #16a34a; --err: #dc2626;
+    --edit: #7c3aed; --edit-hover: #6d28d9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+  }
+  header {
+    background: var(--card); border-bottom: 1px solid var(--border);
+    padding: 14px 24px; display: flex; align-items: center; gap: 10px;
+  }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header .tag { font-size: 12px; color: var(--muted); background: #eef2ff; padding: 2px 10px; border-radius: 20px; }
+  .wrap { display: flex; gap: 20px; padding: 20px 24px; max-width: 1280px; margin: 0 auto; align-items: flex-start; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .left { width: 420px; flex-shrink: 0; }
+  .right { flex: 1; min-width: 0; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; color: var(--text); }
+  textarea, input[type=text], input[type=number] {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 14px; font-family: inherit; background: #fafafa;
+  }
+  textarea { min-height: 150px; resize: vertical; line-height: 1.6; }
+  textarea:focus, input:focus { outline: 2px solid var(--accent); background: #fff; }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; }
+  .preset {
+    border: 1px solid var(--border); background: #fff; border-radius: 8px;
+    padding: 7px 12px; font-size: 13px; cursor: pointer; transition: all .15s;
+  }
+  .preset:hover { border-color: var(--accent); }
+  .preset.active { border-color: var(--accent); background: #eef2ff; color: var(--accent); font-weight: 600; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  button.gen {
+    width: 100%; margin-top: 20px; padding: 13px; font-size: 15px; font-weight: 700;
+    background: var(--accent); color: #fff; border: none; border-radius: 10px; cursor: pointer;
+    transition: background .15s;
+  }
+  button.gen:hover { background: var(--accent-hover); }
+  button.gen.edit-mode { background: var(--edit); }
+  button.gen.edit-mode:hover { background: var(--edit-hover); }
+  button.gen:disabled { background: #9ca3af; cursor: not-allowed; }
+  #status { margin-top: 14px; font-size: 13px; color: var(--muted); min-height: 20px; }
+  #status.running { color: var(--accent); }
+  #status.done { color: var(--ok); font-weight: 600; }
+  #status.error { color: var(--err); }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; border: 2px solid #c7d2fe;
+    border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite;
+    vertical-align: -2px; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #result { display: none; text-align: center; }
+  #result img { max-width: 100%; border-radius: 10px; border: 1px solid var(--border); }
+  #result .meta { font-size: 12px; color: var(--muted); margin-top: 8px; word-break: break-all; }
+  .empty { color: var(--muted); text-align: center; padding: 60px 20px; font-size: 14px; }
+  .hist-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .gallery .item { cursor: pointer; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; position: relative; }
+  .gallery .item img { width: 100%; height: 150px; object-fit: cover; display: block; }
+  .gallery .item:hover { border-color: var(--accent); }
+  .gallery .item .nm { font-size: 11px; color: var(--muted); padding: 5px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gallery .item .editBtn {
+    position: absolute; top: 6px; right: 6px; border: none; cursor: pointer;
+    background: var(--edit); color: #fff; font-size: 11px; font-weight: 600;
+    padding: 4px 9px; border-radius: 20px; opacity: 0; transition: opacity .15s;
+  }
+  .gallery .item:hover .editBtn { opacity: 1; }
+  .gallery .item .editBtn:hover { background: var(--edit-hover); }
+  .gallery .item .badge {
+    position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.55); color: #fff;
+    font-size: 10px; padding: 2px 7px; border-radius: 20px;
+  }
+
+  /* 参考图区 */
+  .refbox { border: 1px dashed #c7d2fe; background: #f8faff; border-radius: 10px; padding: 12px; margin-top: 6px; }
+  .refbox.on { border-color: var(--edit); background: #f5f3ff; }
+  .refhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .refhead .t { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .refhead .t.on { color: var(--edit); }
+  .refbody { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+  .refthumb {
+    width: 84px; height: 84px; border-radius: 8px; border: 1px solid var(--border);
+    background: #fff; object-fit: cover; display: block;
+  }
+  .refthumb.ph { display: flex; align-items: center; justify-content: center; color: #c7c7c7; font-size: 11px; }
+  .refacts { display: flex; flex-direction: column; gap: 6px; }
+  .btn-sm {
+    border: 1px solid var(--border); background: #fff; border-radius: 7px; padding: 6px 10px;
+    font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm.p { background: var(--edit); color: #fff; border-color: var(--edit); }
+  .btn-sm.p:hover { background: var(--edit-hover); color: #fff; }
+  .chk { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 500; }
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .slider-row input[type=range] { flex: 1; }
+  .slider-row .val { font-size: 12px; font-weight: 700; color: var(--edit); width: 34px; text-align: right; }
+  .hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
+  @media (max-width: 900px) { .wrap { flex-direction: column; } .left { width: 100%; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Qwen-Image 2.1 本地生图</h1>
+  <span class="tag">RTX 3050 · 8GB 优化</span>
+  <span class="tag" id="modeTag">文生图</span>
+</header>
+
+<div class="wrap">
+  <div class="panel left">
+    <label id="promptLabel">提示词（支持中英文）</label>
+    <textarea id="prompt" placeholder="描述你想生成的画面，例如：一只挥手的小树懒，扁平矢量插画，明亮色彩"></textarea>
+
+    <label>参考图 / 二次编辑（可选）</label>
+    <div class="refbox" id="refbox">
+      <div class="refhead">
+        <span class="t" id="refTitle">未选择参考图 · 当前为文生图</span>
+        <button class="btn-sm" id="clearRef" style="display:none">清除</button>
+      </div>
+      <div class="refbody">
+        <img class="refthumb ph" id="refThumb" alt=""><span style="display:none"></span>
+        <div class="refacts">
+          <button class="btn-sm p" id="uploadBtn">上传本地图片</button>
+          <span class="hint" style="margin:0">或在下方历史图库点「编辑」</span>
+        </div>
+      </div>
+      <div class="slider-row" id="strengthRow" style="display:none">
+        <span style="font-size:12px;color:var(--muted);font-weight:600">改动强度</span>
+        <input type="range" id="strength" min="0.1" max="0.95" step="0.05" value="0.65">
+        <span class="val" id="strengthVal">0.65</span>
+      </div>
+      <label class="chk" id="sizeRow" style="display:none">
+        <input type="checkbox" id="sizeFromInit" checked> 沿用参考图尺寸（推荐）
+      </label>
+      <div class="hint" id="refHint" style="display:none">
+        小强度≈微调（换色/光影/细节），大强度≈大改（换装/换场景）。<br>
+        提示词写「改完之后的样子」，例如：把裙子改成酒红色丝绒，背景换成夜色江景。
+      </div>
+    </div>
+
+    <label>画面尺寸</label>
+    <div class="presets" id="presets">
+      <button class="preset active" data-w="512" data-h="512">方形 512×512</button>
+      <button class="preset" data-w="448" data-h="768">竖版 9:16</button>
+      <button class="preset" data-w="768" data-h="448">横版 16:9</button>
+    </div>
+
+    <div class="row">
+      <div><label>宽度</label><input type="number" id="width" value="512" min="64" step="32"></div>
+      <div><label>高度</label><input type="number" id="height" value="512" min="64" step="32"></div>
+    </div>
+
+    <div class="row">
+      <div><label>步数</label><input type="number" id="steps" value="20" min="1" max="50"></div>
+      <div><label>CFG</label><input type="number" id="cfg" value="6.0" min="0" max="15" step="0.5"></div>
+      <div><label>种子（留空随机）</label><input type="number" id="seed" placeholder="随机"></div>
+    </div>
+
+    <button class="gen" id="genBtn">生成图片</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="panel right">
+    <div id="result" style="display:none">
+      <img id="resultImg" alt="生成结果">
+      <div class="meta" id="resultMeta"></div>
+    </div>
+    <div id="empty" class="empty">生成的图片会显示在这里<br>单张约 5–8 分钟，请耐心等待</div>
+  </div>
+</div>
+
+<div class="wrap" style="padding-top:0">
+  <div class="panel" style="width:100%">
+    <div class="hist-title">历史图库（点击查看大图 · 悬停点「编辑」做二次修改）</div>
+    <div class="gallery" id="gallery"></div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/bmp" style="display:none">
+
+<script>
+let curW = 512, curH = 512, polling = null;
+let ref = null; // {kind, name, url}
+
+const $ = id => document.getElementById(id);
+
+document.querySelectorAll('.preset').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.preset').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    curW = +b.dataset.w; curH = +b.dataset.h;
+    $('width').value = curW; $('height').value = curH;
+    $('sizeFromInit').checked = false;
+  });
+});
+$('width').addEventListener('input', e => { curW = +e.target.value; clearActive(); });
+$('height').addEventListener('input', e => { curH = +e.target.value; clearActive(); });
+function clearActive(){ document.querySelectorAll('.preset').forEach(x=>x.classList.remove('active')); }
+
+function setStatus(msg, cls){ const s = $('status'); s.textContent = msg; s.className = cls; }
+
+// ---- 参考图 ----
+function setRef(kind, name, url){
+  ref = {kind, name, url};
+  $('refbox').classList.add('on');
+  $('refTitle').classList.add('on');
+  $('refTitle').textContent = '参考图：' + name;
+  $('refThumb').src = url + '?t=' + Date.now();
+  $('refThumb').classList.remove('ph');
+  $('refThumb').removeAttribute('style');
+  $('clearRef').style.display = '';
+  $('strengthRow').style.display = 'flex';
+  $('sizeRow').style.display = 'flex';
+  $('refHint').style.display = '';
+  $('promptLabel').textContent = '编辑提示词（描述改完之后的样子）';
+  $('modeTag').textContent = '图编辑';
+  $('genBtn').textContent = '以参考图生成（二次编辑）';
+  $('genBtn').classList.add('edit-mode');
+}
+function clearRef(){
+  ref = null;
+  $('refbox').classList.remove('on');
+  $('refTitle').classList.remove('on');
+  $('refTitle').textContent = '未选择参考图 · 当前为文生图';
+  $('refThumb').removeAttribute('src');
+  $('refThumb').classList.add('ph');
+  $('clearRef').style.display = 'none';
+  $('strengthRow').style.display = 'none';
+  $('sizeRow').style.display = 'none';
+  $('refHint').style.display = 'none';
+  $('promptLabel').textContent = '提示词（支持中英文）';
+  $('modeTag').textContent = '文生图';
+  $('genBtn').textContent = '生成图片';
+  $('genBtn').classList.remove('edit-mode');
+}
+$('clearRef').onclick = clearRef;
+$('strength').addEventListener('input', e => { $('strengthVal').textContent = (+e.target.value).toFixed(2); });
+
+$('uploadBtn').onclick = () => $('fileInput').click();
+$('fileInput').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const fd = new FormData(); fd.append('file', f);
+  setStatus('上传中…', 'running');
+  try {
+    const r = await fetch('/upload', {method:'POST', body: fd});
+    const j = await r.json();
+    if (!j.ok) { setStatus('❌ ' + j.error, 'error'); return; }
+    setRef(j.kind, j.name, j.url);
+    if (j.width && j.height && $('sizeFromInit').checked) {
+      $('width').value = j.width; $('height').value = j.height;
+      clearActive();
+    }
+    setStatus('✅ 参考图已就绪', 'done');
+    loadHistory();
+  } catch (err) { setStatus('❌ 上传失败: ' + err, 'error'); }
+  e.target.value = '';
+});
+
+// ---- 生成 ----
+$('genBtn').addEventListener('click', async () => {
+  const prompt = $('prompt').value.trim();
+  if (!prompt) { setStatus('请先输入提示词', 'error'); return; }
+  const body = {
+    prompt,
+    width: curW || +$('width').value,
+    height: curH || +$('height').value,
+    steps: +$('steps').value,
+    cfg: +$('cfg').value,
+    seed: $('seed').value,
+  };
+  if (ref) {
+    body.init_kind = ref.kind;
+    body.init_name = ref.name;
+    body.strength = +$('strength').value;
+    body.size_from_init = $('sizeFromInit').checked;
+  }
+  const btn = $('genBtn');
+  btn.disabled = true;
+  setStatus('提交中…', 'running');
+  try {
+    const r = await fetch('/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const j = await r.json();
+    if (!j.ok) { setStatus('❌ ' + (j.error||'失败'), 'error'); btn.disabled = false; return; }
+    poll(j.task_id);
+  } catch (e) {
+    setStatus('❌ 请求失败: ' + e, 'error'); btn.disabled = false;
+  }
+});
+
+function poll(taskId) {
+  clearInterval(polling);
+  polling = setInterval(async () => {
+    try {
+      const r = await fetch('/status/' + taskId);
+      const j = await r.json();
+      if (!j.ok) { setStatus('❌ ' + j.error, 'error'); stop(); return; }
+      if (j.status === 'running') {
+        const tip = j.edit ? '编辑中… 约 6–10 分钟（读图编码 + 采样 + 解码）'
+                           : '生成中… 约 5–8 分钟（提示词编码 + 采样 + 解码）';
+        setStatus(tip, 'running');
+        $('status').insertAdjacentHTML('afterbegin', '<span class="spinner"></span>');
+      } else if (j.status === 'done') {
+        setStatus('✅ 生成完成', 'done'); stop();
+        showResult(j.out, j.prompt);
+      } else {
+        setStatus('❌ 生成失败', 'error'); stop();
+        console.error(j.error);
+        alert('生成失败，详见日志：\n' + (j.error||'').slice(-400));
+      }
+    } catch (e) { setStatus('❌ 轮询失败: ' + e, 'error'); stop(); }
+  }, 3000);
+  function stop(){ clearInterval(polling); $('genBtn').disabled = false; }
+}
+
+function showResult(name, prompt) {
+  $('empty').style.display = 'none';
+  $('result').style.display = 'block';
+  $('resultImg').src = '/file/history/' + name + '?t=' + Date.now();
+  $('resultMeta').textContent = name + ' · ' + (prompt||'').slice(0, 120);
+  loadHistory();
+}
+
+async function loadHistory() {
+  try {
+    const r = await fetch('/history'); const j = await r.json();
+    const g = $('gallery'); g.innerHTML = '';
+    if (!j.files.length) { g.innerHTML = '<div class="empty" style="padding:20px">暂无历史图片</div>'; return; }
+    j.files.forEach(f => {
+      const url = '/file/' + f.kind + '/' + encodeURIComponent(f.name);
+      const d = document.createElement('div'); d.className = 'item';
+      const badge = f.kind === 'uploads' ? '<span class="badge">上传</span>' : '';
+      d.innerHTML = badge + '<img src="' + url + '" loading="lazy"><div class="nm">' + f.name + '</div>'
+                  + '<button class="editBtn">编辑</button>';
+      d.querySelector('img').onclick = () => {
+        $('empty').style.display = 'none';
+        $('result').style.display = 'block';
+        $('resultImg').src = url;
+        $('resultMeta').textContent = f.name;
+      };
+      d.querySelector('.editBtn').onclick = ev => {
+        ev.stopPropagation();
+        setRef(f.kind, f.name, url);
+        $('empty').style.display = 'none';
+        $('result').style.display = 'block';
+        $('resultImg').src = url;
+        $('resultMeta').textContent = '参考图：' + f.name;
+        $('prompt').focus();
+        window.scrollTo({top: 0, behavior: 'smooth'});
+      };
+      g.appendChild(d);
+    });
+  } catch (e) { /* ignore */ }
+}
+
+loadHistory();
+</script>
+</body>
+</html>

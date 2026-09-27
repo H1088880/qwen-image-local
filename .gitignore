@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# WebUI 运行时产物
+webui/history/
+webui/uploads/
+webui/server.log
+
+# 模型与二进制（体积大，不进仓库）
+models/
+vulkan/
+cuda-dlls/
+out/
+*.gguf
+*.safetensors
+*.dll
+*.exe
+*.zip
+*.log
