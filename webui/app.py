@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Qwen-Image-2.1 本地生图 Web GUI 后端（支持文生图 + 历史图/上传图二次编辑）"""
 import os
+import queue
 import re
 import subprocess
 import threading
@@ -28,7 +29,11 @@ app = Flask(__name__)
 
 tasks = {}
 tasks_lock = threading.Lock()
-generating = threading.Event()  # 同一时间只允许一个生成任务（显存受限）
+
+# 任务队列：8GB 显存只能同时跑一个 sd-cli，新任务自动排队而非拒绝
+task_queue = queue.Queue()
+queue_order = []  # 排队中的 task_id（按先后顺序，用于展示排队位置）
+MAX_QUEUE = 20    # 队列上限，防 runaway
 
 # 允许作为参考图 / 可对外访问的目录白名单（防目录穿越）
 KIND_DIRS = {"history": OUTPUT_DIR, "uploads": UPLOAD_DIR}
@@ -109,11 +114,12 @@ def index():
     return render_template("index.html")
 
 
-# ---------- 生成（文生图 / 图编辑二合一） ----------
+# ---------- 生成（文生图 / 图编辑二合一，忙时自动排队） ----------
 @app.route("/generate", methods=["POST"])
 def generate():
-    if generating.is_set():
-        return jsonify({"ok": False, "error": "已有任务在生成中，请等它完成"}), 409
+    with tasks_lock:
+        if len(queue_order) >= MAX_QUEUE:
+            return jsonify({"ok": False, "error": f"队列已满（上限 {MAX_QUEUE} 个），请稍后再试"}), 429
 
     data = request.get_json(silent=True) or {}
     prompt = (data.get("prompt") or "").strip()
@@ -171,19 +177,37 @@ def generate():
 
     with tasks_lock:
         tasks[task_id] = {
-            "status": "running", "out": out_name, "path": out_path,
+            "status": "queued", "out": out_name, "path": out_path, "cmd": cmd,
             "prompt": prompt, "width": width, "height": height,
             "edit": edit, "init": (init_name if edit else None),
             "strength": (strength if edit else None),
-            "error": None, "started": datetime.now().isoformat(),
+            "error": None, "started": None,
         }
+        queue_order.append(task_id)
+        queue_pos = len(queue_order)
 
-    generating.set()
-    threading.Thread(target=_run, args=(task_id, cmd, out_path), daemon=True).start()
-    return jsonify({"ok": True, "task_id": task_id, "edit": edit})
+    task_queue.put(task_id)
+    return jsonify({"ok": True, "task_id": task_id, "edit": edit,
+                    "queued": queue_pos > 1, "queue_pos": queue_pos})
 
 
-def _run(task_id, cmd, out_path):
+def _worker():
+    """后台单工作线程：显存受限，任务按顺序逐个执行"""
+    while True:
+        task_id = task_queue.get()
+        with tasks_lock:
+            if task_id in queue_order:
+                queue_order.remove(task_id)
+            t = tasks.get(task_id)
+            if t:
+                t["status"] = "running"
+                t["started"] = datetime.now().isoformat()
+        _run(task_id)
+
+
+def _run(task_id):
+    t = tasks[task_id]
+    cmd, out_path = t["cmd"], t["path"]
     try:
         log_path = os.path.join(OUTPUT_DIR, f"{task_id}.log")
         with open(log_path, "w", encoding="utf-8") as logf:
@@ -205,14 +229,18 @@ def _run(task_id, cmd, out_path):
         with tasks_lock:
             tasks[task_id]["status"] = "error"
             tasks[task_id]["error"] = str(e)
-    finally:
-        generating.clear()
+
+
+# 启动后台生成工作线程（单线程串行消费队列）
+threading.Thread(target=_worker, daemon=True).start()
 
 
 @app.route("/status/<task_id>")
 def status(task_id):
     with tasks_lock:
         t = tasks.get(task_id)
+        if t and t["status"] == "queued":
+            t = {**t, "queue_pos": queue_order.index(task_id) + 1}
     if not t:
         return jsonify({"ok": False, "error": "任务不存在"}), 404
     return jsonify({"ok": True, **t})
