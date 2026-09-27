@@ -246,6 +246,24 @@ def status(task_id):
     return jsonify({"ok": True, **t})
 
 
+@app.route("/queue")
+def queue_status():
+    """全局队列视图：所有排队中/生成中的任务（页面刷新后也能看到）"""
+    with tasks_lock:
+        items = []
+        for tid in queue_order:
+            t = tasks.get(tid)
+            if t:
+                items.append({"id": tid, "status": "queued",
+                              "queue_pos": queue_order.index(tid) + 1,
+                              "edit": t["edit"], "prompt": t["prompt"][:50]})
+        for tid, t in tasks.items():
+            if t["status"] == "running":
+                items.append({"id": tid, "status": "running",
+                              "edit": t["edit"], "prompt": t["prompt"][:50]})
+    return jsonify({"ok": True, "tasks": items})
+
+
 # ---------- 上传参考图 ----------
 @app.route("/upload", methods=["POST"])
 def upload():

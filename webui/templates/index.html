@@ -108,6 +108,11 @@
   .slider-row input[type=range] { flex: 1; }
   .slider-row .val { font-size: 12px; font-weight: 700; color: var(--edit); width: 34px; text-align: right; }
   .hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
+  .qline { font-size: 13px; color: var(--muted); padding: 5px 0; border-bottom: 1px dashed var(--border); }
+  .qline:last-child { border-bottom: none; }
+  .qline .tag-run { color: var(--accent); font-weight: 600; }
+  .qline .tag-wait { color: #d97706; font-weight: 600; }
+  .qline .tag-done { color: var(--ok); font-weight: 600; }
   @media (max-width: 900px) { .wrap { flex-direction: column; } .left { width: 100%; } }
 </style>
 </head>
@@ -178,6 +183,13 @@
       <div class="meta" id="resultMeta"></div>
     </div>
     <div id="empty" class="empty">生成的图片会显示在这里<br>单张约 5–8 分钟，请耐心等待</div>
+  </div>
+</div>
+
+<div class="wrap" id="queueWrap" style="padding-top:0;display:none">
+  <div class="panel" style="width:100%">
+    <div class="hist-title">任务队列（显存限制，一次只跑一个，其余自动排队）</div>
+    <div id="queueList"></div>
   </div>
 </div>
 
@@ -381,6 +393,25 @@ async function loadHistory() {
 }
 
 loadHistory();
+
+// ---- 全局任务队列面板（刷新页面也能看到所有排队/生成中的任务） ----
+async function pollQueue() {
+  try {
+    const r = await fetch('/queue'); const j = await r.json();
+    const wrap = $('queueWrap');
+    if (!j.ok || !j.tasks.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    $('queueList').innerHTML = j.tasks.map(t => {
+      const badge = t.status === 'running'
+        ? '<span class="tag-run">🔄 生成中</span>'
+        : '<span class="tag-wait">⏳ 排队中（前面还有 ' + Math.max(0, t.queue_pos - 1) + ' 个）</span>';
+      return '<div class="qline">' + badge + ' · ' + (t.edit ? '[二次编辑] ' : '') +
+             (t.prompt || '').replace(/</g, '&lt;') + '</div>';
+    }).join('');
+  } catch (e) { /* ignore */ }
+}
+setInterval(pollQueue, 3000);
+pollQueue();
 </script>
 </body>
 </html>
