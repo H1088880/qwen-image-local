@@ -78,6 +78,20 @@
   }
   .gallery .item:hover .editBtn { opacity: 1; }
   .gallery .item .editBtn:hover { background: var(--edit-hover); }
+  .gallery .item .delBtn {
+    position: absolute; top: 6px; right: 52px; border: none; cursor: pointer;
+    background: var(--err); color: #fff; font-size: 11px; font-weight: 600;
+    padding: 4px 9px; border-radius: 20px; opacity: 0; transition: opacity .15s;
+  }
+  .gallery .item:hover .delBtn { opacity: 1; }
+  .gallery .item .delBtn:hover { background: #b91c1c; }
+  .hist-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .hist-bar .hist-title { margin-bottom: 0; }
+  .clearBtn {
+    border: 1px solid var(--err); background: #fff; color: var(--err);
+    font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; cursor: pointer;
+  }
+  .clearBtn:hover { background: var(--err); color: #fff; }
   .gallery .item .badge {
     position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.55); color: #fff;
     font-size: 10px; padding: 2px 7px; border-radius: 20px;
@@ -195,7 +209,10 @@
 
 <div class="wrap" style="padding-top:0">
   <div class="panel" style="width:100%">
-    <div class="hist-title">历史图库（点击查看大图 · 悬停点「编辑」做二次修改）</div>
+    <div class="hist-bar">
+      <div class="hist-title">历史图库（点击查看大图 · 悬停点「编辑」做二次修改 / 「删除」清理）</div>
+      <button class="clearBtn" onclick="clearAll()">清空全部</button>
+    </div>
     <div class="gallery" id="gallery"></div>
   </div>
 </div>
@@ -370,7 +387,7 @@ async function loadHistory() {
       const d = document.createElement('div'); d.className = 'item';
       const badge = f.kind === 'uploads' ? '<span class="badge">上传</span>' : '';
       d.innerHTML = badge + '<img src="' + url + '" loading="lazy"><div class="nm">' + f.name + '</div>'
-                  + '<button class="editBtn">编辑</button>';
+                  + '<button class="editBtn">编辑</button><button class="delBtn" title="删除">删除</button>';
       d.querySelector('img').onclick = () => {
         $('empty').style.display = 'none';
         $('result').style.display = 'block';
@@ -387,9 +404,48 @@ async function loadHistory() {
         $('prompt').focus();
         window.scrollTo({top: 0, behavior: 'smooth'});
       };
+      d.querySelector('.delBtn').onclick = ev => {
+        ev.stopPropagation();
+        if (!confirm('确定删除这张图片？\n' + f.name + '\n删除后不可恢复。')) return;
+        fetch('/delete', {method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({kind: f.kind, name: f.name})})
+          .then(r => r.json())
+          .then(j => {
+            if (!j.ok) { alert('删除失败：' + (j.error || '未知错误')); return; }
+            // 若删除的正是当前大图 / 参考图，回到占位态，避免指向已删文件
+            if ($('resultImg').getAttribute('src') &&
+                decodeURIComponent($('resultImg').getAttribute('src')).indexOf(f.name) >= 0) {
+              $('result').style.display = 'none';
+              $('empty').style.display = 'block';
+              $('resultImg').removeAttribute('src');
+              $('resultMeta').textContent = '';
+            }
+            if (ref && ref.name === f.name) { clearRef(); }
+            loadHistory();
+          })
+          .catch(() => alert('删除请求失败'));
+      };
       g.appendChild(d);
     });
   } catch (e) { /* ignore */ }
+}
+
+async function clearAll() {
+  try {
+    const j0 = await (await fetch('/history')).json();
+    const n = (j0.files || []).length;
+    if (!n) { alert('历史图库已经是空的。'); return; }
+    if (!confirm('确定清空全部 ' + n + ' 张图片？\n包含生成的历史图与上传的参考图，删除后不可恢复。')) return;
+    const j = await (await fetch('/clear', {method: 'POST'})).json();
+    if (!j.ok) { alert('清空失败'); return; }
+    if (ref) { clearRef(); }
+    $('result').style.display = 'none';
+    $('empty').style.display = 'block';
+    $('resultImg').removeAttribute('src');
+    $('resultMeta').textContent = '';
+    loadHistory();
+    alert('已清空 ' + j.deleted + ' 张' + (j.failed ? ('，失败 ' + j.failed + ' 张') : ''));
+  } catch (e) { alert('清空请求失败'); }
 }
 
 loadHistory();

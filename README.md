@@ -7,7 +7,7 @@
 - 🖥️ **低显存友好**：核心策略是「扩散模型留显存、文本编码器/VAE 进内存」的拆分 + CPU offload，8GB 显存实测可跑
 - 🖼️ **文生图**：支持最高 2K 分辨率、图中文字渲染、透明图（RGBA）
 - ✏️ **指令式改图**：改背景、换配色、增删元素，支持最多 10 张参考图
-- 🌐 **Web GUI**：Flask 界面，文生图 + 历史图库一键二次编辑 + 本地上传参考图
+- 🌐 **Web GUI**：Flask 界面，文生图 + 历史图库一键二次编辑 + 本地上传参考图 + 单张删除 / 一键清空
 - 🖥️ **桌面应用（可选）**：可打包成双击即用的 exe，自动拉起服务、关窗自动停（见 [desktop-app/](desktop-app/)）
 - 📦 **免 Python/PyTorch 出图**：底层用 stable-diffusion.cpp（sd-cli）预编译版，纯 C/C++
 - 🤖 **Agent Skill 附带**：包含一份可直接装入 AI Agent（如 WorkBuddy/Claude Code 等）的 skill 文档

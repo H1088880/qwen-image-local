@@ -328,5 +328,24 @@ def delete():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/clear", methods=["POST"])
+def clear():
+    """清空历史图与上传参考图（不可恢复），返回删除/失败数量。"""
+    deleted = failed = 0
+    for d in (OUTPUT_DIR, UPLOAD_DIR):
+        try:
+            for f in os.listdir(d):
+                if not f.lower().endswith(IMG_EXT):
+                    continue
+                try:
+                    os.remove(os.path.join(d, f))
+                    deleted += 1
+                except OSError:
+                    failed += 1
+        except OSError:
+            pass
+    return jsonify({"ok": True, "deleted": deleted, "failed": failed})
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=7860, debug=False, threaded=True)
