@@ -127,11 +127,17 @@ cd /g/qwen-image-2.1/vulkan && ./sd-cli.exe \
 - 启动：`cd /g/qwen-image-2.1/webui && ./venv/Scripts/python.exe app.py`
   - **后台常驻必须用工具的 `run_in_background=true`**。写成 `cmd &` 或 `nohup ... &` 都不行：进程会随那一次 shell 调用结束被回收，下一个命令里 `curl` 直接 Connection refused。
   - 本机有系统代理，**访问 127.0.0.1 要绕过代理**：curl 加 `--noproxy '*'`；Python 用 `urllib.request.build_opener(urllib.request.ProxyHandler({}))`，否则一律 502 / 000。
+  - **改完 `webui/app.py` 或 `templates/index.html` 必须重启服务**：非 debug 模式下 Jinja 模板会被缓存（`TEMPLATES_AUTO_RELOAD` 跟随 `app.debug`，这里是 False），F5 刷新也看不到改动，现象是「代码改了、页面还是旧的」。步骤：`cp` 到运行实例 `G:\qwen-image-2.1\webui\` → 杀掉占用 7860 的进程 → 重新 `run_in_background` 启动。
+  - 前端改动建议跑一遍端到端验证（工作区 `_build/ui_nav_test.js`）：playwright 驱动真实浏览器点按钮 + 按方向键，断言翻页/禁用状态/无 JS 报错。启动 chromium 失败时回退 `channel: 'msedge'`，并带 `--no-proxy-server` 参数。
 - 历史图库每张图悬停有「编辑」按钮 → 自动填入为参考图 → 写编辑 prompt → 生成
 - 参考图两个来源：历史图库的图（kind=history）、本地上传（kind=uploads，存 `webui/uploads/`）
 - 「沿用参考图尺寸」默认勾选，自动按 64 对齐，避免手填尺寸出错
 - 改动强度滑块即 `--strength`
 - 历史图库支持单张「删除」与「清空全部」（后端 `/delete` 单张、`/clear` 全清）；删除当前大图/参考图时前端会回到占位态，避免指向已删文件
+- **大图左右翻页**：结果区大图两侧的圆形 `‹` `›`（`.nav-btn`，悬停变蓝），或键盘 `←` `→`；下方 meta 显示「第 x / N 张 · 文件名」
+  - 翻页列表取自 `/history` 的顺序（mtime 倒序，**最新在最前**），所以 `→` 是按时间往回翻；首张禁用 `‹`、末张禁用 `›`（只有 1 张图时两个按钮都不显示）
+  - 状态由 `viewList` + `viewIndex` 维护，`syncViewIndex()` 用当前大图 src 反查下标；`loadHistory()`、点「编辑」设参考图后都会重算，删除当前图后回到占位态并隐藏按钮
+  - 焦点在 `<input>` / `<textarea>` 内时方向键不翻页（不抢光标）；页面未打开大图时也不响应
 - **保存图片到本地**：结果大图下方「⬇ 保存图片」按钮 / 缩略图悬停「⬇ 保存」/ 任意图片（含参考图缩略图）右键菜单「保存图片到本地」
   - 主路径 **`POST /save`**：服务端直接 `shutil.copy2` 到 `~/Downloads`（没有则 `~/Desktop`，再无则 `<BASE>/saved`），重名自动 `(1)(2)` 后缀，返回真实路径；前端在右下角浮层（`.toast`）显示完整路径。**目录只在这几个固定位置里选，不接受调用方传路径**
   - 备用 **`GET /download/<kind>/<name>`**：与 `/file/` 共用 `_resolve()` 白名单解析，加 `as_attachment=True` 触发浏览器保存框；`/save` 失败时前端自动降级到它并在提示里说明

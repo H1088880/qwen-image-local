@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Qwen-Image 2.1 本地生图</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%A8%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #f5f6f8; --card: #ffffff; --border: #e5e7eb;
@@ -62,8 +63,22 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   #result { display: none; text-align: center; }
-  #result img { max-width: 100%; border-radius: 10px; border: 1px solid var(--border); }
+  .viewer { position: relative; display: inline-block; max-width: 100%; }
+  .viewer img { max-width: 100%; max-height: 82vh; display: block; border-radius: 10px; border: 1px solid var(--border); }
   #result .meta { font-size: 12px; color: var(--muted); margin-top: 8px; word-break: break-all; }
+  /* 大图左右翻页 */
+  .nav-btn {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+    width: 44px; height: 44px; padding: 0 0 4px; border-radius: 50%;
+    border: 1px solid var(--border); background: rgba(255,255,255,.92); color: var(--text);
+    font-size: 26px; line-height: 1; font-family: inherit; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,.16); transition: background .15s, color .15s, border-color .15s;
+  }
+  .nav-btn:hover:not([disabled]) { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .nav-btn[disabled] { opacity: .26; cursor: default; }
+  .nav-btn.prev { left: 12px; }
+  .nav-btn.next { right: 12px; }
   .empty { color: var(--muted); text-align: center; padding: 60px 20px; font-size: 14px; }
   .hist-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
   .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
@@ -248,7 +263,11 @@
 
   <div class="panel right">
     <div id="result" style="display:none">
-      <img id="resultImg" alt="生成结果">
+      <div class="viewer" id="viewer">
+        <button class="nav-btn prev" id="prevBtn" title="上一张（←）" style="display:none">‹</button>
+        <img id="resultImg" alt="生成结果">
+        <button class="nav-btn next" id="nextBtn" title="下一张（→）" style="display:none">›</button>
+      </div>
       <div class="meta" id="resultMeta"></div>
       <div class="res-acts">
         <button class="act-btn" id="saveResBtn">⬇ 保存图片</button>
@@ -271,7 +290,7 @@
 <div class="wrap" style="padding-top:0">
   <div class="panel" style="width:100%">
     <div class="hist-bar">
-      <div class="hist-title">历史图库（点击查看大图 · 悬停点「保存」下载 /「编辑」二改 /「删除」清理 · 图片上右键同样可以保存）</div>
+      <div class="hist-title">历史图库（点击查看大图，大图两侧「‹ ›」或键盘 ← → 翻页 · 悬停点「保存」下载 /「编辑」二改 /「删除」清理 · 图片上右键同样可以保存）</div>
       <button class="clearBtn" onclick="clearAll()">清空全部</button>
     </div>
     <div class="gallery" id="gallery"></div>
@@ -312,6 +331,43 @@ function parseFile(src){
 function fileUrlOf(i){ return '/file/' + i.kind + '/' + encodeURIComponent(i.name); }
 function dlUrlOf(i){ return '/download/' + i.kind + '/' + encodeURIComponent(i.name); }
 function resInfo(){ return parseFile($('resultImg').getAttribute('src')); }
+
+// ---- 大图左右翻页（列表与历史图库同序：新的在前）----
+let viewList = [];    // [{kind, name}]，由 loadHistory() 填充
+let viewIndex = -1;   // 当前大图在 viewList 中的下标；-1 = 不在列表里
+
+function renderNav(){
+  const n = viewList.length;
+  const show = n > 1 && viewIndex >= 0;
+  $('prevBtn').style.display = show ? '' : 'none';
+  $('nextBtn').style.display = show ? '' : 'none';
+  $('prevBtn').disabled = !show || viewIndex <= 0;
+  $('nextBtn').disabled = !show || viewIndex >= n - 1;
+}
+
+// 用当前大图的地址反查它在列表中的位置（翻页 / 删除 / 新增后保持同步）
+function syncViewIndex(){
+  const i = resInfo();
+  viewIndex = i ? viewList.findIndex(x => x.kind === i.kind && x.name === i.name) : -1;
+  renderNav();
+}
+
+function openViewer(n){
+  if (n < 0 || n >= viewList.length) return;
+  const f = viewList[n];
+  viewIndex = n;
+  $('empty').style.display = 'none';
+  $('result').style.display = 'block';
+  $('resultImg').src = fileUrlOf(f) + '?t=' + Date.now();
+  $('resultMeta').textContent = '第 ' + (n + 1) + ' / ' + viewList.length + ' 张 · ' + f.name;
+  renderNav();
+}
+
+function stepViewer(d){
+  if (viewIndex < 0) syncViewIndex();     // 当前图不在列表里时先定位
+  if (viewIndex < 0) return;
+  openViewer(viewIndex + d);
+}
 
 function esc(s){ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -422,7 +478,15 @@ ctxMenu.addEventListener('click', e => {
 });
 window.addEventListener('click', e => { if (!e.target.closest('.ctx-menu')) hideCtx(); });
 window.addEventListener('scroll', hideCtx, true);
-window.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtx(); });
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { hideCtx(); return; }
+  // 输入提示词时不要被方向键抢走光标
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if ($('result').style.display === 'none') return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); stepViewer(-1); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); stepViewer(1); }
+});
 
 function bindImgMenu(el, infoFn){
   el.addEventListener('contextmenu', e => {
@@ -575,8 +639,13 @@ async function loadHistory() {
   try {
     const r = await fetch('/history'); const j = await r.json();
     const g = $('gallery'); g.innerHTML = '';
-    if (!j.files.length) { g.innerHTML = '<div class="empty" style="padding:20px">暂无历史图片</div>'; return; }
-    j.files.forEach(f => {
+    viewList = (j.files || []).map(f => ({kind: f.kind, name: f.name}));
+    if (!j.files.length) {
+      g.innerHTML = '<div class="empty" style="padding:20px">暂无历史图片</div>';
+      syncViewIndex();
+      return;
+    }
+    j.files.forEach((f, idx) => {
       const url = '/file/' + f.kind + '/' + encodeURIComponent(f.name);
       const info = {kind: f.kind, name: f.name};
       const d = document.createElement('div'); d.className = 'item';
@@ -588,12 +657,7 @@ async function loadHistory() {
                   + '<button class="editBtn">编辑</button><button class="delBtn" title="删除">删除</button>';
       const imgEl = d.querySelector('img');
       bindImgMenu(imgEl, () => info);
-      imgEl.onclick = () => {
-        $('empty').style.display = 'none';
-        $('result').style.display = 'block';
-        $('resultImg').src = url;
-        $('resultMeta').textContent = f.name;
-      };
+      imgEl.onclick = () => openViewer(idx);   // 打开大图并接管左右翻页
       d.querySelector('.saveBtn').onclick = ev => { ev.stopPropagation(); saveImage(info); };
       d.querySelector('.editBtn').onclick = ev => {
         ev.stopPropagation();
@@ -602,6 +666,7 @@ async function loadHistory() {
         $('result').style.display = 'block';
         $('resultImg').src = url;
         $('resultMeta').textContent = '参考图：' + f.name;
+        syncViewIndex();
         $('prompt').focus();
         window.scrollTo({top: 0, behavior: 'smooth'});
       };
@@ -611,6 +676,7 @@ async function loadHistory() {
       };
       g.appendChild(d);
     });
+    syncViewIndex();   // 列表变了，刷新翻页按钮的可用状态
   } catch (e) { /* ignore */ }
 }
 
@@ -637,6 +703,8 @@ bindImgMenu($('resultImg'), resInfo);
 bindImgMenu($('refThumb'), () => (ref ? {kind: ref.kind, name: ref.name} : null));
 $('saveResBtn').onclick = () => saveImage(resInfo());
 $('copyResBtn').onclick = () => { const i = resInfo(); if (i) copyText(location.origin + fileUrlOf(i)); };
+$('prevBtn').onclick = () => stepViewer(-1);
+$('nextBtn').onclick = () => stepViewer(1);
 $('refResBtn').onclick = () => {
   const i = resInfo();
   if (!i) return;
