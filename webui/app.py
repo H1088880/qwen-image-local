@@ -291,6 +291,19 @@ def file(kind, filename):
     return send_from_directory(base, filename)
 
 
+@app.route("/download/<kind>/<path:filename>")
+def download(kind, filename):
+    """另存为：同 /file/ 一样的白名单校验，但强制 attachment，触发浏览器保存对话框。"""
+    p = _resolve(kind, filename)
+    if not p:
+        return "file not found", 404
+    d, n = os.path.dirname(p), os.path.basename(p)
+    try:
+        return send_from_directory(d, n, as_attachment=True, download_name=n)
+    except TypeError:  # Flask < 2.0 兼容
+        return send_from_directory(d, n, as_attachment=True, attachment_filename=n)
+
+
 @app.route("/image/<path:filename>")  # 兼容旧路径
 def image(filename):
     return send_from_directory(OUTPUT_DIR, filename)

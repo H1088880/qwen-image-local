@@ -96,6 +96,39 @@
     position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.55); color: #fff;
     font-size: 10px; padding: 2px 7px; border-radius: 20px;
   }
+  .gallery .item .tw { position: relative; }
+  .gallery .item .saveBtn {
+    position: absolute; left: 6px; bottom: 6px; border: none; cursor: pointer;
+    background: rgba(17,24,39,.72); color: #fff; font-size: 11px; font-weight: 600;
+    padding: 4px 9px; border-radius: 20px; opacity: 0; transition: opacity .15s;
+  }
+  .gallery .item:hover .saveBtn { opacity: 1; }
+  .gallery .item .saveBtn:hover { background: var(--accent); }
+
+  /* 结果区操作条 */
+  .res-acts { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+  .act-btn {
+    border: 1px solid var(--accent); background: #fff; color: var(--accent);
+    font-size: 13px; font-weight: 600; padding: 8px 18px; border-radius: 22px;
+    cursor: pointer; font-family: inherit; transition: all .15s;
+  }
+  .act-btn:hover { background: var(--accent); color: #fff; }
+  .act-btn.ghost { border-color: var(--border); color: var(--muted); }
+  .act-btn.ghost:hover { border-color: var(--muted); background: var(--muted); color: #fff; }
+
+  /* 图片右键菜单 */
+  .ctx-menu {
+    position: fixed; z-index: 9999; min-width: 168px; background: #fff;
+    border: 1px solid var(--border); border-radius: 10px; padding: 6px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.16); display: none; font-size: 13px;
+  }
+  .ctx-menu .ctx-item {
+    padding: 8px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap;
+    display: flex; align-items: center; gap: 8px; color: var(--text);
+  }
+  .ctx-menu .ctx-item:hover { background: #eef2ff; color: var(--accent); }
+  .ctx-menu .ctx-item.danger:hover { background: #fee2e2; color: var(--err); }
+  .ctx-menu .ctx-sep { height: 1px; background: var(--border); margin: 5px 4px; }
 
   /* 参考图区 */
   .refbox { border: 1px dashed #c7d2fe; background: #f8faff; border-radius: 10px; padding: 12px; margin-top: 6px; }
@@ -195,6 +228,11 @@
     <div id="result" style="display:none">
       <img id="resultImg" alt="生成结果">
       <div class="meta" id="resultMeta"></div>
+      <div class="res-acts">
+        <button class="act-btn" id="saveResBtn">⬇ 保存图片</button>
+        <button class="act-btn" id="refResBtn">🖼 设为参考图</button>
+        <button class="act-btn ghost" id="copyResBtn">🔗 复制地址</button>
+      </div>
     </div>
     <div id="empty" class="empty">生成的图片会显示在这里<br>单张约 5–8 分钟，请耐心等待</div>
   </div>
@@ -210,7 +248,7 @@
 <div class="wrap" style="padding-top:0">
   <div class="panel" style="width:100%">
     <div class="hist-bar">
-      <div class="hist-title">历史图库（点击查看大图 · 悬停点「编辑」做二次修改 / 「删除」清理）</div>
+      <div class="hist-title">历史图库（点击查看大图 · 悬停点「保存」下载 /「编辑」二改 /「删除」清理 · 图片上右键同样可以保存）</div>
       <button class="clearBtn" onclick="clearAll()">清空全部</button>
     </div>
     <div class="gallery" id="gallery"></div>
@@ -239,6 +277,106 @@ $('height').addEventListener('input', e => { curH = +e.target.value; clearActive
 function clearActive(){ document.querySelectorAll('.preset').forEach(x=>x.classList.remove('active')); }
 
 function setStatus(msg, cls){ const s = $('status'); s.textContent = msg; s.className = cls; }
+
+// ---- 图片保存 / 右键菜单（共用） ----
+function parseFile(src){
+  try {
+    const m = decodeURIComponent(src || '').match(/\/file\/(history|uploads)\/([^?#]+)/);
+    if (m) return {kind: m[1], name: m[2]};
+  } catch (e) { /* ignore */ }
+  return null;
+}
+function fileUrlOf(i){ return '/file/' + i.kind + '/' + encodeURIComponent(i.name); }
+function dlUrlOf(i){ return '/download/' + i.kind + '/' + encodeURIComponent(i.name); }
+function resInfo(){ return parseFile($('resultImg').getAttribute('src')); }
+
+function saveImage(i){
+  if (!i) { alert('没能定位到这张图片对应的文件，刷新页面后重试'); return; }
+  const a = document.createElement('a');
+  a.href = dlUrlOf(i);
+  a.download = i.name;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setStatus('⬇ 已触发下载：' + i.name + '（若浏览器询问保存位置，确认即可）', 'done');
+}
+
+function copyText(t){
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t)
+      .then(() => setStatus('✅ 已复制图片地址', 'done'))
+      .catch(() => prompt('自动复制失败，请手动复制：', t));
+  } else {
+    prompt('请手动复制：', t);
+  }
+}
+
+function deleteItem(kind, name){
+  if (!confirm('确定删除这张图片？\n' + name + '\n删除后不可恢复。')) return;
+  fetch('/delete', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({kind: kind, name: name})})
+    .then(r => r.json())
+    .then(j => {
+      if (!j.ok) { alert('删除失败：' + (j.error || '未知错误')); return; }
+      // 若删除的正是当前大图 / 参考图，回到占位态，避免指向已删文件
+      if ($('resultImg').getAttribute('src') &&
+          decodeURIComponent($('resultImg').getAttribute('src')).indexOf(name) >= 0) {
+        $('result').style.display = 'none';
+        $('empty').style.display = 'block';
+        $('resultImg').removeAttribute('src');
+        $('resultMeta').textContent = '';
+      }
+      if (ref && ref.name === name) { clearRef(); }
+      loadHistory();
+    })
+    .catch(() => alert('删除请求失败'));
+}
+
+// 自定义右键菜单
+const ctxMenu = document.createElement('div');
+ctxMenu.className = 'ctx-menu';
+ctxMenu.innerHTML =
+  '<div class="ctx-item" data-act="save">⬇ 保存图片到本地</div>' +
+  '<div class="ctx-item" data-act="ref">🖼 设为参考图</div>' +
+  '<div class="ctx-item" data-act="copy">🔗 复制图片地址</div>' +
+  '<div class="ctx-sep"></div>' +
+  '<div class="ctx-item danger" data-act="del">🗑 删除这张图</div>';
+document.body.appendChild(ctxMenu);
+let ctxInfo = null;
+
+function hideCtx(){ ctxMenu.style.display = 'none'; ctxInfo = null; }
+function showCtx(x, y, info, canDel){
+  ctxInfo = info;
+  ctxMenu.querySelector('[data-act="del"]').style.display = canDel ? '' : 'none';
+  ctxMenu.style.display = 'block';
+  const w = ctxMenu.offsetWidth, h = ctxMenu.offsetHeight;
+  ctxMenu.style.left = Math.max(4, Math.min(x, innerWidth - w - 8)) + 'px';
+  ctxMenu.style.top  = Math.max(4, Math.min(y, innerHeight - h - 8)) + 'px';
+}
+ctxMenu.addEventListener('click', e => {
+  const it = e.target.closest('.ctx-item');
+  if (!it || !ctxInfo) return;
+  const i = ctxInfo, act = it.dataset.act;
+  hideCtx();
+  if (act === 'save') saveImage(i);
+  else if (act === 'ref') setRef(i.kind, i.name, fileUrlOf(i));
+  else if (act === 'copy') copyText(location.origin + fileUrlOf(i));
+  else if (act === 'del') deleteItem(i.kind, i.name);
+});
+window.addEventListener('click', e => { if (!e.target.closest('.ctx-menu')) hideCtx(); });
+window.addEventListener('scroll', hideCtx, true);
+window.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtx(); });
+
+function bindImgMenu(el, infoFn){
+  el.addEventListener('contextmenu', e => {
+    const i = infoFn();
+    if (!i) return;   // 定位不到具体文件时不接管，保留浏览器原生右键
+    e.preventDefault();
+    hideCtx();
+    showCtx(e.clientX, e.clientY, i, true);
+  });
+}
 
 // ---- 参考图 ----
 function setRef(kind, name, url){
@@ -384,16 +522,23 @@ async function loadHistory() {
     if (!j.files.length) { g.innerHTML = '<div class="empty" style="padding:20px">暂无历史图片</div>'; return; }
     j.files.forEach(f => {
       const url = '/file/' + f.kind + '/' + encodeURIComponent(f.name);
+      const info = {kind: f.kind, name: f.name};
       const d = document.createElement('div'); d.className = 'item';
       const badge = f.kind === 'uploads' ? '<span class="badge">上传</span>' : '';
-      d.innerHTML = badge + '<img src="' + url + '" loading="lazy"><div class="nm">' + f.name + '</div>'
+      d.innerHTML = badge
+                  + '<div class="tw"><img src="' + url + '" loading="lazy">'
+                  + '<button class="saveBtn" title="保存图片到本地">⬇ 保存</button></div>'
+                  + '<div class="nm">' + f.name + '</div>'
                   + '<button class="editBtn">编辑</button><button class="delBtn" title="删除">删除</button>';
-      d.querySelector('img').onclick = () => {
+      const imgEl = d.querySelector('img');
+      bindImgMenu(imgEl, () => info);
+      imgEl.onclick = () => {
         $('empty').style.display = 'none';
         $('result').style.display = 'block';
         $('resultImg').src = url;
         $('resultMeta').textContent = f.name;
       };
+      d.querySelector('.saveBtn').onclick = ev => { ev.stopPropagation(); saveImage(info); };
       d.querySelector('.editBtn').onclick = ev => {
         ev.stopPropagation();
         setRef(f.kind, f.name, url);
@@ -406,24 +551,7 @@ async function loadHistory() {
       };
       d.querySelector('.delBtn').onclick = ev => {
         ev.stopPropagation();
-        if (!confirm('确定删除这张图片？\n' + f.name + '\n删除后不可恢复。')) return;
-        fetch('/delete', {method: 'POST', headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({kind: f.kind, name: f.name})})
-          .then(r => r.json())
-          .then(j => {
-            if (!j.ok) { alert('删除失败：' + (j.error || '未知错误')); return; }
-            // 若删除的正是当前大图 / 参考图，回到占位态，避免指向已删文件
-            if ($('resultImg').getAttribute('src') &&
-                decodeURIComponent($('resultImg').getAttribute('src')).indexOf(f.name) >= 0) {
-              $('result').style.display = 'none';
-              $('empty').style.display = 'block';
-              $('resultImg').removeAttribute('src');
-              $('resultMeta').textContent = '';
-            }
-            if (ref && ref.name === f.name) { clearRef(); }
-            loadHistory();
-          })
-          .catch(() => alert('删除请求失败'));
+        deleteItem(f.kind, f.name);
       };
       g.appendChild(d);
     });
@@ -447,6 +575,19 @@ async function clearAll() {
     alert('已清空 ' + j.deleted + ' 张' + (j.failed ? ('，失败 ' + j.failed + ' 张') : ''));
   } catch (e) { alert('清空请求失败'); }
 }
+
+// 结果大图：右键菜单 + 操作按钮
+bindImgMenu($('resultImg'), resInfo);
+bindImgMenu($('refThumb'), () => (ref ? {kind: ref.kind, name: ref.name} : null));
+$('saveResBtn').onclick = () => saveImage(resInfo());
+$('copyResBtn').onclick = () => { const i = resInfo(); if (i) copyText(location.origin + fileUrlOf(i)); };
+$('refResBtn').onclick = () => {
+  const i = resInfo();
+  if (!i) return;
+  setRef(i.kind, i.name, fileUrlOf(i));
+  $('prompt').focus();
+  window.scrollTo({top: 0, behavior: 'smooth'});
+};
 
 loadHistory();
 
