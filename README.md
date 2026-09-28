@@ -78,11 +78,17 @@ venv 方式启动见 start_webui.sh
 
 | 想做的事 | 怎么做 |
 | --- | --- |
-| 保存图片到本地 | 结果大图下方「⬇ 保存图片」；历史缩略图悬停「⬇ 保存」；任意图片上右键 →「保存图片到本地」 |
+| 保存图片到本地 | 结果大图下方「⬇ 保存图片」；历史缩略图悬停「⬇ 保存」；任意图片上右键 →「保存图片到本地」。保存后界面右下角会弹出**完整文件路径** |
 | 设为参考图二次编辑 | 缩略图悬停「编辑」，或右键 →「设为参考图」，然后写编辑提示词 |
 | 删除 / 清空 | 缩略图悬停「删除」、右上角「清空全部」，或右键 →「删除这张图」（均不可恢复） |
 
-后端下载路由 `GET /download/<kind>/<name>`：走的是与预览 `/file/<kind>/<name>` 同一套白名单校验（防目录穿越），但强制 `Content-Disposition: attachment`，浏览器会弹保存框而非直接预览。
+**「保存」是怎么落盘的**
+
+界面上的保存按钮走 `POST /save`，由 **Flask 服务端直接把文件复制到本机下载目录**（`~/Downloads`，不存在则 `~/Desktop`），重名自动加 `(1)` `(2)` 后缀，并返回真实路径显示在界面上。之所以不走浏览器下载，是因为桌面应用内嵌的 WebView2 默认禁止下载（pywebview 的 `ALLOW_DOWNLOADS` 默认为 `False`），点保存会**静默失败**——界面上提示已触发，磁盘上却没有文件。
+
+另有一个标准下载路由 `GET /download/<kind>/<name>`：与预览 `/file/<kind>/<name>` 共用同一套白名单校验（防目录穿越），但强制 `Content-Disposition: attachment`，用于直接分享链接或在浏览器里另存。`POST /save` 失败时前端会自动降级回它。
+
+`GET /save-dir` 返回当前保存目录，前端用它显示「会存到哪」。
 
 ### 3. 命令行直接出图（可选）
 
@@ -128,6 +134,8 @@ cp launcher_config.json dist/QwenImageLocal/   # 配置文件需与 exe 同目�
 ```
 
 把 `desktop-app/` 放在项目目录内（与 `webui/` 同级）时**无需任何配置**，启动器会自动定位 WebUI 目录。详见 [desktop-app/README.md](desktop-app/README.md)。
+
+**关于下载**：启动器会显式打开 `webview.settings['ALLOW_DOWNLOADS'] = True`（pywebview 默认 `False`，这会让 WebView2 直接取消下载且不给任何提示）。开关放在 `launcher_config.json` 的 `allow_downloads` 里，默认 `true`。即便如此，桌面应用里的「保存图片」走的也是服务端直存（见上文），不依赖 WebView2 的下载链路。
 
 ## 安全与合规提示
 

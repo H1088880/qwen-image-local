@@ -53,8 +53,11 @@ cp launcher_config.json dist/QwenImageLocal/
 | `title` | 窗口标题 | `Qwen-Image 本地生图` |
 | `width` / `height` | 初始窗口尺寸 | `1180` / `920` |
 | `boot_timeout` | 等待服务就绪秒数 | `120` |
+| `allow_downloads` | 是否放行 WebView2 下载。pywebview 默认 `False`，会让页面里的「保存图片」**静默失败**（点了没反应、没文件、没提示），故启动器默认置 `True` | `true` |
 
 改完保存即可，**不用重新打包**。
+
+> 即便把 `allow_downloads` 设为 `false`，界面上的「保存图片」依然可用——它走的是服务端直存（WebUI 的 `POST /save`，直接写进本机下载目录），不依赖 WebView2 的下载链路。
 
 ## 命令行（可选）
 

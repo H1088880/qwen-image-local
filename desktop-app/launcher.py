@@ -27,6 +27,7 @@ DEFAULTS = {
     "height": 920,
     "boot_timeout": 120,        # 等待 Flask 就绪的最长秒数（首次冷启动生图环境可达 1~2 分钟）
     "log_file": "desktop_launcher.log",
+    "allow_downloads": True,    # 放行 WebView2 的下载（pywebview 默认关闭，会导致保存图片静默失败）
 }
 
 LOADING_HTML = """<!doctype html><html><head><meta charset="utf-8">
@@ -220,6 +221,12 @@ def run_gui(cfg):
 
     try:
         import webview  # 延迟导入，便于无界面环境做逻辑测试
+        # pywebview 默认 ALLOW_DOWNLOADS=False，WebView2 的 DownloadStarting 会直接
+        # args.Cancel=True —— 页面上点「保存图片」会静默失败：既不落盘也不弹框。
+        try:
+            webview.settings["ALLOW_DOWNLOADS"] = bool(cfg.get("allow_downloads", True))
+        except Exception as e:
+            log("设置 ALLOW_DOWNLOADS 失败（不影响启动）：%s" % e)
         window = webview.create_window(
             cfg["title"], html=LOADING_HTML,
             width=cfg["width"], height=cfg["height"],

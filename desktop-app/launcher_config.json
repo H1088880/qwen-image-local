@@ -8,5 +8,6 @@
   "width": 1180,
   "height": 920,
   "boot_timeout": 120,
-  "log_file": "desktop_launcher.log"
+  "log_file": "desktop_launcher.log",
+  "allow_downloads": true
 }

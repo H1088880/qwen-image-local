@@ -115,6 +115,28 @@
   .act-btn:hover { background: var(--accent); color: #fff; }
   .act-btn.ghost { border-color: var(--border); color: var(--muted); }
   .act-btn.ghost:hover { border-color: var(--muted); background: var(--muted); color: #fff; }
+  .save-info {
+    display: none; font-size: 12px; line-height: 1.7; margin-top: 12px;
+    padding: 10px 14px; border-radius: 8px; background: #f0fdf4;
+    border: 1px solid #bbf7d0; color: #166534; text-align: left;
+    word-break: break-all; user-select: text;
+  }
+  .save-info.show { display: block; }
+  .save-info.warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+  .save-info code { font-family: Consolas, Menlo, monospace; background: #fff; padding: 1px 6px; border-radius: 5px; }
+
+  /* 右下角浮层提示：保存结果在任何滚动位置都看得到 */
+  .toast {
+    position: fixed; right: 22px; bottom: 22px; z-index: 9998; max-width: 400px;
+    background: #fff; border: 1px solid #bbf7d0; border-left: 4px solid var(--ok);
+    border-radius: 10px; padding: 12px 16px; font-size: 13px; line-height: 1.7;
+    color: #166534; box-shadow: 0 10px 30px rgba(0,0,0,.14);
+    word-break: break-all; user-select: text;
+    opacity: 0; transform: translateY(8px); pointer-events: none; transition: all .2s;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .toast.warn { background: #fffbeb; border-color: #fde68a; border-left-color: #d97706; color: #92400e; }
+  .toast code { font-family: Consolas, Menlo, monospace; background: #f6f7f9; padding: 1px 6px; border-radius: 5px; }
 
   /* 图片右键菜单 */
   .ctx-menu {
@@ -233,6 +255,7 @@
         <button class="act-btn" id="refResBtn">🖼 设为参考图</button>
         <button class="act-btn ghost" id="copyResBtn">🔗 复制地址</button>
       </div>
+      <div class="save-info" id="saveInfo"></div>
     </div>
     <div id="empty" class="empty">生成的图片会显示在这里<br>单张约 5–8 分钟，请耐心等待</div>
   </div>
@@ -290,8 +313,36 @@ function fileUrlOf(i){ return '/file/' + i.kind + '/' + encodeURIComponent(i.nam
 function dlUrlOf(i){ return '/download/' + i.kind + '/' + encodeURIComponent(i.name); }
 function resInfo(){ return parseFile($('resultImg').getAttribute('src')); }
 
+function esc(s){ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+// 右下角浮层：保存结果在任何滚动位置都能看见
+function toast(html, warn){
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+  t.className = 'toast show' + (warn ? ' warn' : '');
+  t.innerHTML = html;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = 'toast'; }, warn ? 9000 : 6000);
+}
+
 function saveImage(i){
   if (!i) { alert('没能定位到这张图片对应的文件，刷新页面后重试'); return; }
+  const box = $('saveInfo');
+  box.className = 'save-info show';
+  box.textContent = '正在保存…';
+  fetch('/save', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify(i)})
+    .then(r => r.json())
+    .then(j => {
+      if (!j.ok) { browserDownload(i, j.error); return; }
+      box.innerHTML = '✅ 已保存到：<code>' + esc(j.path) + '</code>';
+      toast('✅ 已保存到<br><code>' + esc(j.path) + '</code>');
+    })
+    .catch(e => browserDownload(i, e));
+}
+
+// 服务端直接落盘不可用时，退回浏览器下载
+function browserDownload(i, why){
   const a = document.createElement('a');
   a.href = dlUrlOf(i);
   a.download = i.name;
@@ -299,7 +350,12 @@ function saveImage(i){
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setStatus('⬇ 已触发下载：' + i.name + '（若浏览器询问保存位置，确认即可）', 'done');
+  const msg = '⚠ 服务端直接保存失败（' + esc(why || '未知原因') + '），已改用浏览器下载。<br>'
+            + '若仍找不到文件，请到浏览器的「下载」里确认保存位置。';
+  const box = $('saveInfo');
+  box.className = 'save-info show warn';
+  box.innerHTML = msg;
+  toast('⚠ 已改用浏览器下载<br>请到浏览器的「下载」中确认保存位置', true);
 }
 
 function copyText(t){
@@ -588,6 +644,11 @@ $('refResBtn').onclick = () => {
   $('prompt').focus();
   window.scrollTo({top: 0, behavior: 'smooth'});
 };
+// 告诉用户会存到哪个目录
+fetch('/save-dir').then(r => r.json()).then(j => {
+  if (!j.ok) return;
+  $('saveResBtn').title = '保存到 ' + j.dir;
+}).catch(() => {});
 
 loadHistory();
 

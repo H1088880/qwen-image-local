@@ -3,6 +3,7 @@
 import os
 import queue
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -291,6 +292,29 @@ def file(kind, filename):
     return send_from_directory(base, filename)
 
 
+def _save_dir():
+    """「保存到本机」的落盘目录：优先 Downloads，其次 Desktop，都没有就放 BASE/saved。
+    只在这几个固定目录里选，不接受调用方传入路径。"""
+    home = os.path.expanduser("~")
+    for d in (os.path.join(home, "Downloads"), os.path.join(home, "Desktop")):
+        if os.path.isdir(d):
+            return d
+    d = os.path.join(BASE, "saved")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _free_path(dst_dir, filename):
+    """同名时不覆盖，自动加 (1)(2)… 后缀。"""
+    base, ext = os.path.splitext(filename)
+    dst = os.path.join(dst_dir, base + ext)
+    i = 1
+    while os.path.exists(dst):
+        dst = os.path.join(dst_dir, "%s (%d)%s" % (base, i, ext))
+        i += 1
+    return dst
+
+
 @app.route("/download/<kind>/<path:filename>")
 def download(kind, filename):
     """另存为：同 /file/ 一样的白名单校验，但强制 attachment，触发浏览器保存对话框。"""
@@ -302,6 +326,32 @@ def download(kind, filename):
         return send_from_directory(d, n, as_attachment=True, download_name=n)
     except TypeError:  # Flask < 2.0 兼容
         return send_from_directory(d, n, as_attachment=True, attachment_filename=n)
+
+
+@app.route("/save", methods=["POST"])
+def save_to_disk():
+    """由服务端直接落盘到本机下载目录，返回真实路径。
+
+    比走浏览器下载可靠：桌面应用内嵌的 WebView 若没开下载许可会静默取消，
+    浏览器也可能被下载设置/内置预览面板拦掉，用户只会看到「已触发下载」却没有文件。
+    """
+    data = request.get_json(silent=True) or {}
+    p = _resolve(data.get("kind") or "", data.get("name") or "")
+    if not p:
+        return jsonify({"ok": False, "error": "文件不存在或路径非法"}), 404
+    dst_dir = _save_dir()
+    dst = _free_path(dst_dir, os.path.basename(p))
+    try:
+        shutil.copy2(p, dst)
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "path": dst, "dir": dst_dir})
+
+
+@app.route("/save-dir")
+def save_dir_info():
+    """前端用来在界面上显示「会保存到哪」。"""
+    return jsonify({"ok": True, "dir": _save_dir()})
 
 
 @app.route("/image/<path:filename>")  # 兼容旧路径
