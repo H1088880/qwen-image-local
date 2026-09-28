@@ -124,7 +124,9 @@ cd /g/qwen-image-2.1/vulkan && ./sd-cli.exe \
 
 已在 `G:/qwen-image-2.1/webui/` 实现 Flask 版界面（端口 7860），支持文生图 + **历史图二次编辑**：
 
-- 启动：`cd /g/qwen-image-2.1/webui && ./venv/Scripts/python.exe app.py`（后台常驻，不要用 `&`，会被 shell 回收）
+- 启动：`cd /g/qwen-image-2.1/webui && ./venv/Scripts/python.exe app.py`
+  - **后台常驻必须用工具的 `run_in_background=true`**。写成 `cmd &` 或 `nohup ... &` 都不行：进程会随那一次 shell 调用结束被回收，下一个命令里 `curl` 直接 Connection refused。
+  - 本机有系统代理，**访问 127.0.0.1 要绕过代理**：curl 加 `--noproxy '*'`；Python 用 `urllib.request.build_opener(urllib.request.ProxyHandler({}))`，否则一律 502 / 000。
 - 历史图库每张图悬停有「编辑」按钮 → 自动填入为参考图 → 写编辑 prompt → 生成
 - 参考图两个来源：历史图库的图（kind=history）、本地上传（kind=uploads，存 `webui/uploads/`）
 - 「沿用参考图尺寸」默认勾选，自动按 64 对齐，避免手填尺寸出错
