@@ -122,3 +122,9 @@ cp launcher_config.json dist/QwenImageLocal/   # 配置文件需与 exe 同目�
 ## License
 
 MIT
+
+### 仓库信息
+
+- 仓库地址：https://github.com/H1088880/qwen-image-local
+- 版权持有人：H1088880（LICENSE）
+- 模型底座：Qwen-Image-2.1（阿里通义，权重与许可归原方所有，本仓库只含部署与调用工具链）
