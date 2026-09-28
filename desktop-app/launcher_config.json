@@ -1,0 +1,12 @@
+{
+  "_说明": "与 exe 同目录的配置文件，改完保存即可（无需重新打包）。命令行参数优先级更高。",
+  "_提示": "webui_dir 留空 = 自动在 exe 的上级目录中查找 webui 目录（推荐）；也可显式填绝对路径。",
+  "webui_dir": "",
+  "host": "127.0.0.1",
+  "port": 7860,
+  "title": "Qwen-Image 本地生图",
+  "width": 1180,
+  "height": 920,
+  "boot_timeout": 120,
+  "log_file": "desktop_launcher.log"
+}

@@ -8,6 +8,7 @@
 - 🖼️ **文生图**：支持最高 2K 分辨率、图中文字渲染、透明图（RGBA）
 - ✏️ **指令式改图**：改背景、换配色、增删元素，支持最多 10 张参考图
 - 🌐 **Web GUI**：Flask 界面，文生图 + 历史图库一键二次编辑 + 本地上传参考图
+- 🖥️ **桌面应用（可选）**：可打包成双击即用的 exe，自动拉起服务、关窗自动停（见 [desktop-app/](desktop-app/)）
 - 📦 **免 Python/PyTorch 出图**：底层用 stable-diffusion.cpp（sd-cli）预编译版，纯 C/C++
 - 🤖 **Agent Skill 附带**：包含一份可直接装入 AI Agent（如 WorkBuddy/Claude Code 等）的 skill 文档
 
@@ -25,12 +26,16 @@
 │           ├── quantization-guide.md   # 量化档位与显存选型表
 │           ├── commands.md             # 文生图/改图/透明图完整命令
 │           └── troubleshooting.md      # OOM 等常见问题排查
-└── webui/                       # Flask Web 界面源码
-    ├── app.py                   # 后端（含目录白名单防穿越、单任务锁）
-    ├── templates/index.html     # 前端页面
-    ├── start_webui.bat          # Windows 一键启动
-    ├── start_webui.sh           # Linux/macOS 一键启动
-    └── requirements.txt
+├── webui/                       # Flask Web 界面源码
+│   ├── app.py                   # 后端（含目录白名单防穿越、任务队列）
+│   ├── templates/index.html     # 前端页面
+│   ├── start_webui.bat          # Windows 一键启动
+│   ├── start_webui.sh           # Linux/macOS 一键启动
+│   └── requirements.txt
+└── desktop-app/                 # 可选：桌面应用启动器（pywebview + PyInstaller）
+    ├── launcher.py              # 拉起服务 + 原生窗口 + 关窗清理
+    ├── launcher_config.json     # 配置（webui 路径/端口/窗口尺寸）
+    └── README.md
 ```
 
 ## 快速开始
@@ -97,6 +102,22 @@ sd-cli \
 - 512×512 文生图全程约 7.5 分钟
 - 448×768 图像编辑约 6–10 分钟
 - 竖版 448×768 ✅ / 竖版 512×896 ❌（latent 过大 OOM）
+
+## 桌面应用（可选）
+
+不想每次先开终端、再开浏览器，可以把 WebUI 打包成双击即用的桌面程序：自动后台拉起 Flask、服务就绪后弹出原生窗口、**关窗自动停掉服务**，不留后台进程。
+
+```bash
+cd desktop-app
+pip install pywebview pyinstaller
+
+pyinstaller --noconfirm --clean --onedir --windowed --name QwenImageLocal \
+  --collect-all webview --collect-all clr_loader --collect-all pythonnet launcher.py
+
+cp launcher_config.json dist/QwenImageLocal/   # 配置文件需与 exe 同目录
+```
+
+把 `desktop-app/` 放在项目目录内（与 `webui/` 同级）时**无需任何配置**，启动器会自动定位 WebUI 目录。详见 [desktop-app/README.md](desktop-app/README.md)。
 
 ## License
 
